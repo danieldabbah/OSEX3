@@ -118,7 +118,7 @@ int main(int argc, char** argv)
         pthread_join(threads[i], NULL);
     }
     // Note that 0b is in the standard only from c++14
-    /* printf("atomic counter first 16 bit: %d\n", atomic_counter.load() & (0b1111111111111111)); */
+    /* printf("atomic counter first 16 bit: %d\n", p_atomic_counter.load() & (0b1111111111111111)); */
 
 
     CounterClient client;
@@ -130,9 +130,8 @@ int main(int argc, char** argv)
     inputVec.push_back({nullptr, &s1});
     inputVec.push_back({nullptr, &s2});
     inputVec.push_back({nullptr, &s3});
-
-    startMapReduceJob(client, inputVec, outputVec, 4);
-
+    JobHandle job = startMapReduceJob(client, inputVec, outputVec, 4);
+    (MapReduceClient::Job) job;
 
 
     return 0;
