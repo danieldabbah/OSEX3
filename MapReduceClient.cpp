@@ -54,7 +54,7 @@ public:
         (*this->p_atomic_counter) += ((unsigned long int)1 << 62);
     }
 
-    unsigned long int getAtomicCounterp_job->addStageAtomicCounter();Current(){
+    unsigned long int getAtomicCounterCurrent(){
         return (this->p_atomic_counter->load()) & (0x7fffffff);
     }
 
