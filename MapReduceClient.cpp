@@ -84,6 +84,10 @@ class Job{
         std::set<int> *getTest(){
             return this->test;
         }
+
+    IntermediateVec *getPIntermediateVectors() const {
+        return p_intermediateVectors;
+    }
 };
 
 
@@ -143,4 +147,9 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     }
     std::cout<<std::endl<< "size of test is: "<<job->getTest()->size();
     return static_cast<JobHandle> (job);
+}
+
+void emit2 (K2* key, V2* value, void* context){
+    auto* p_intermediateVec = (IntermediateVec*) context;
+    p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
 }
