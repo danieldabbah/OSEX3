@@ -8,12 +8,14 @@
 // the key, value for the map function and the MapReduceFramework
 class K1 {
 public:
+    virtual void print() = 0;
 	virtual ~K1(){}
 	virtual bool operator<(const K1 &other) const = 0;
 };
 
 class V1 {
 public:
+    virtual void print() = 0;
 	virtual ~V1() {}
 };
 
@@ -21,12 +23,14 @@ public:
 // the key, value for the Reduce function created by the Map function
 class K2 {
 public:
-	virtual ~K2(){}
+    virtual void print() = 0;
+    virtual ~K2(){}
 	virtual bool operator<(const K2 &other) const = 0;
 };
 
 class V2 {
 public:
+    virtual void print() = 0;
 	virtual ~V2(){}
 };
 
@@ -34,12 +38,14 @@ public:
 // the key,value for the Reduce function created by the Map function
 class K3 {
 public:
+    virtual void print() = 0;
 	virtual ~K3()  {}
 	virtual bool operator<(const K3 &other) const = 0;
 };
 
 class V3 {
 public:
+    virtual void print() = 0;
 	virtual ~V3() {}
 };
 

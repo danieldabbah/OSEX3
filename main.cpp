@@ -9,6 +9,7 @@
 #include <string>
 #include <array>
 #include <unistd.h>
+#include <iostream>
 
 
 #define MT_LEVEL 4
@@ -16,6 +17,7 @@
 class VString : public V1 {
 public:
     VString(std::string content) : content(content) { }
+    virtual void print(){std::cout << content;}
     std::string content;
 };
 
@@ -25,6 +27,7 @@ public:
     virtual bool operator<(const K2 &other) const {
         return c < static_cast<const KChar&>(other).c;
     }
+    virtual void print(){std::cout<<c;}
     virtual bool operator<(const K3 &other) const {
         return c < static_cast<const KChar&>(other).c;
     }
@@ -33,6 +36,7 @@ public:
 
 class VCount : public V2, public V3{
 public:
+    virtual void print() {std::cout << count;}
     VCount(int count) : count(count) { }
     int count;
 };
@@ -54,7 +58,7 @@ public:
             KChar* k2 = new KChar(i);
             VCount* v2 = new VCount(counts[i]);
             usleep(150000);
-            //emit2(k2, v2, context);
+            emit2(k2, v2, context);
         }
     }
 
@@ -124,15 +128,16 @@ int main(int argc, char** argv)
     CounterClient client;
     InputVec inputVec;
     OutputVec outputVec;
-    VString s1("This string is full of characters");
-    VString s2("Multithreading is awesome");
-    VString s3("race conditions are bad");
+    VString s1("iiiThhhhhis");
+    VString s2("Multi");
+    VString s3("cracce");
     inputVec.push_back({nullptr, &s1});
     inputVec.push_back({nullptr, &s2});
     inputVec.push_back({nullptr, &s3});
-    for (int i = 0; i < 100; ++i) {
-        inputVec.push_back({nullptr, &s3});
-    }
+//    for (int i = 0; i < 100; ++i) {
+//        inputVec.push_back({nullptr, &s3});
+//    }
+
     JobHandle job = startMapReduceJob(client, inputVec, outputVec, 4);
 
 

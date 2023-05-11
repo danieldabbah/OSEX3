@@ -2,8 +2,16 @@
 #include <iostream>
 #include <atomic>
 #include <set>
+#include <algorithm>
 #include "MapReduceClient.h"
+#include "Barrier.h"
 #include "MapReduceFramework.h"
+
+
+
+
+
+
 
 class Job;
 
@@ -24,28 +32,64 @@ class Job{
         const InputVec& inputVec;
         OutputVec* outputVec;
         JobState state;
-        std::atomic<uint64_t>* p_atomic_counter; // 0-30 counter, 31-61 input size, 62-63 stage
+        atomic<uint64_t>* p_atomic_counter;
+        // 0-30 counter, 31-61 input size, 62-63 stage
         std::set<int>* test;
+        Barrier* p_afterSortBarrier;
+
+        bool beforeShuffle = true;
+        pthread_cond_t condBeforeShuffle;
+        pthread_mutex_t mutexBeforeShuffle;
         //TODO: add mutexes
         //TODO: in the destructor release the new
-
+        pthread_mutex_t testMutex;
+        vector<IntermediateVec> intermediateVec;
 
     public:
+        const vector<IntermediateVec> &getIntermediateVec() const {
+            return intermediateVec;
+        }
+
+        bool isBeforeShuffle() const {
+            return beforeShuffle;
+        }
+
+        void setBeforeShuffle(bool beforeShuffle) {
+            Job::beforeShuffle = beforeShuffle;
+        }
+
+        pthread_cond_t *getCondBeforeShuffle()  {
+            return &condBeforeShuffle;
+        }
+
+        pthread_mutex_t *getMutexBeforeShuffle() {
+            return &mutexBeforeShuffle;
+        }
+
         Job(const int multiThreadLevel,
             const MapReduceClient& client,
             const InputVec& inputVec, OutputVec& outputVec):
+                mutexBeforeShuffle(PTHREAD_MUTEX_INITIALIZER), condBeforeShuffle(PTHREAD_COND_INITIALIZER),
+                testMutex(PTHREAD_MUTEX_INITIALIZER),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
             //TODO: check if new command fail
-            //TODO: add atomic counter<int 64 bit>
             outputVec = outputVec;
             threads = new pthread_t[multiThreadLevel];
             threadContexts = new ThreadContext[multiThreadLevel];
             p_personalThreadVectors = new IntermediateVec[multiThreadLevel];
             this->state = {UNDEFINED_STAGE,0};
             this->p_atomic_counter = new std::atomic<uint64_t>(inputVec.size() << 31);
+
+            p_afterSortBarrier = new Barrier(multiThreadLevel);
+            pthread_mutex_init(&mutexBeforeShuffle, nullptr);
+            pthread_cond_init(&condBeforeShuffle, nullptr);
         }
 
-        virtual ~Job() {
+    const int getMultiThreadLevel() const {
+        return multiThreadLevel;
+    }
+
+    virtual ~Job() {
             free(this->threads);
             free(this->threadContexts);
             free(this->p_personalThreadVectors);
@@ -76,7 +120,11 @@ class Job{
             return stage_t((this->p_atomic_counter->load()) >> 62);
         }
 
-        const std::atomic<uint64_t>* getAtomicCounter(){
+    pthread_mutex_t &getTestMutex() {
+        return testMutex;
+    }
+
+    const std::atomic<uint64_t>* getAtomicCounter(){
             return this->p_atomic_counter;
         }
         OutputVec* getOutputVector(){
@@ -86,7 +134,7 @@ class Job{
             return this->test;
         }
 
-        IntermediateVec *getPIntermediateVectors() const {
+        IntermediateVec *getPpersonalVectors() const {
             return p_personalThreadVectors;
         }
 
@@ -97,39 +145,90 @@ class Job{
     const MapReduceClient &getClient() const {
         return client;
     }
+
+    Barrier *getPAfterSortBarrier() const {
+        return p_afterSortBarrier;
+    }
 };
 void emit2 (K2* key, V2* value, void* context){
     auto* p_intermediateVec = (IntermediateVec*) context;
     p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
 }
 
-void* threadMainFunction(void* arg)
-{
-    ThreadContext* threadContext = (ThreadContext*) arg;
+bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
+    return a.first < b.first;
+}
 
+void mapAndSort(ThreadContext* tc){
     unsigned long int myIndex = 0;
     //the thread pick an index to work on:
-    myIndex = threadContext->p_job->addAtomicCounter();
-    while (myIndex  < threadContext->p_job->getAtomicCounterInputSize()){
-
+    myIndex = tc->p_job->addAtomicCounter();
+    while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
         // if the index is ok, perform the appropriate function of the client of the pair in the index.
-        std::cout << "Hello, Im thread number: " << threadContext->threadID << "\nMy index is: " << myIndex << '\n'<<std::flush;
-
         // get the matching pair from the index:
-        InputPair inputPair = threadContext->p_job->getInputVec().at(myIndex);
-        threadContext->p_job->getClient().map(inputPair.first,
-                                              inputPair.second,threadContext->p_pesonalThreadVector);
+        InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
 
-
-
-        myIndex = threadContext->p_job->addAtomicCounter();
+        tc->p_job->getClient().map(inputPair.first,
+                                              inputPair.second,tc->p_pesonalThreadVector);
+        myIndex = tc->p_job->addAtomicCounter();
     }
     // each thread will sort its intermidateVector:
+    //sort(tc->p_pesonalThreadVector->begin(), tc->p_pesonalThreadVector->end(), cmpKeys);
+}
+
+void printVector2(vector<pair<K2*, V2*>> &vec, int vecId){
+    cout<<endl;
+    for (auto it = vec.begin(); it != vec.end(); it++){
+        cout << "thread: " << vecId << " key:" ;
+        it->first->print();
+        cout << " value: ";
+        it->second->print();
+        cout << endl;
+    }
+}
+
+void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each phase counter and the phase itself. set the counter to 0 after each phase.
+    unsigned long int outputSize = 0;
+    for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
+        outputSize += tc->p_job->getPpersonalVectors()->size();
+    }
+    unsigned long int count = 0;
+    while (count <= outputSize){
+        int max = 0;
+
+    }
+}
+
+void* threadMainFunction(void* arg)
+{
+    ThreadContext* tc = (ThreadContext*) arg;
+    mapAndSort(tc);
+
+    tc->p_job->getPAfterSortBarrier()->barrier();
+
+    pthread_mutex_lock(tc->p_job->getMutexBeforeShuffle());
+    if (tc->p_job->isBeforeShuffle()){
+        if (tc->threadID == 0){
+            //perform shuffle
+            cout << "thread ID: " << tc->threadID << "  will preform a shuffle"<< endl;
+            tc->p_job->setBeforeShuffle(false);
+            pthread_cond_broadcast(tc->p_job->getCondBeforeShuffle());
+        } else {
+            cout << "thread ID: " << tc->threadID << "  gonna wait"<< endl;
+            pthread_cond_wait(tc->p_job->getCondBeforeShuffle(), tc->p_job->getMutexBeforeShuffle());
+            cout << "thread ID: " << tc->threadID << "  done waiting"<< endl;
+        }
+    }
+    pthread_mutex_unlock(tc->p_job->getMutexBeforeShuffle());
+    cout << "thread ID: " << tc->threadID << "  after mutex" << endl;
 
 
+//
+//    pthread_mutex_lock(&tc->p_job->getTestMutex());
+//    printVector2(*tc->p_pesonalThreadVector, tc->threadID);
+//    pthread_mutex_unlock(&tc->p_job->getTestMutex());
 
-
-    return 0;
+    return nullptr;
 }
 
 
@@ -158,7 +257,7 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
 
     //For loop that init all thread contexts:
     for (int i = 0; i < multiThreadLevel; ++i) {
-        threadContexts[i] = {i,job, &(job->getPIntermediateVectors()[i])};
+        threadContexts[i] = {i,job, &(job->getPpersonalVectors()[i])};
     }
 
     //For loop that create all threads:
@@ -169,7 +268,6 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     for (int i = 0; i < multiThreadLevel; ++i) {
         pthread_join(threads[i], NULL);
     }
-    std::cout<<std::endl<< "size of test is: "<<job->getTest()->size();
     return static_cast<JobHandle> (job);
 }
 

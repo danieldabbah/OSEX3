@@ -22,7 +22,7 @@ Barrier::~Barrier()
 	}
 }
 
-
+//TODO: when a function in the barrier class fail we need to throw an exception and catch in the MapReduce
 void Barrier::barrier()
 {
 	if (pthread_mutex_lock(&mutex) != 0){

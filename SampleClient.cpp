@@ -9,7 +9,7 @@
 class VString : public V1 {
 public:
 	VString(std::string content) : content(content) { }
-	std::string content;
+	char *content;
 };
 
 class KChar : public K2, public K3{
