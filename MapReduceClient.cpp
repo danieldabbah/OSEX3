@@ -13,7 +13,7 @@ struct ThreadContext{
     Job* p_job;
     IntermediateVec* p_intermediateVector;
 };
-//safafas
+
 class Job{
     private:
         const int multiThreadLevel;
@@ -27,12 +27,10 @@ class Job{
         std::atomic<uint64_t>* p_atomic_counter; // 0-30 counter, 31-61 input size, 62-63 stage
         std::set<int>* test;
         //TODO: add mutexes
-        //TODO: in the destructor relase the new
+        //TODO: in the destructor release the new
 
 
     public:
-    pthread_mutex_t * counter_mutex;
-
         Job(const int multiThreadLevel,
             const MapReduceClient& client,
             const InputVec& inputVec, OutputVec& outputVec):
@@ -45,13 +43,16 @@ class Job{
             p_intermediateVectors = new IntermediateVec[multiThreadLevel];
             this->state = {UNDEFINED_STAGE,0};
             this->p_atomic_counter = new std::atomic<uint64_t>(inputVec.size() << 31);
-            this->test = new std::set<int>();
-            this->counter_mutex = new pthread_mutex_t();
-            pthread_mutex_init(counter_mutex,NULL);
+        }
+
+        virtual ~Job() {
+            free(this->threads);
+            free(this->threadContexts);
+            free(this->p_intermediateVectors);
+            free(this->p_atomic_counter);
         }
 
         unsigned long int addAtomicCounter(){
-
            return ((*this->p_atomic_counter)++) & (0x7fffffff);
         }
 
@@ -85,9 +86,9 @@ class Job{
             return this->test;
         }
 
-    IntermediateVec *getPIntermediateVectors() const {
-        return p_intermediateVectors;
-    }
+        IntermediateVec *getPIntermediateVectors() const {
+            return p_intermediateVectors;
+        }
 
     const InputVec &getInputVec() const {
         return inputVec;
@@ -157,7 +158,7 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
 
     //For loop that init all thread contexts:
     for (int i = 0; i < multiThreadLevel; ++i) {
-        threadContexts[i] = {i,job};
+        threadContexts[i] = {i,job, &(job->getPIntermediateVectors()[i])};
     }
 
     //For loop that create all threads:
