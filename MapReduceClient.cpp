@@ -88,28 +88,51 @@ class Job{
     IntermediateVec *getPIntermediateVectors() const {
         return p_intermediateVectors;
     }
+
+    const InputVec &getInputVec() const {
+        return inputVec;
+    }
+
+    const MapReduceClient &getClient() const {
+        return client;
+    }
 };
-
-
-
+void emit2 (K2* key, V2* value, void* context){
+    auto* p_intermediateVec = (IntermediateVec*) context;
+    p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
+}
 
 void* threadMainFunction(void* arg)
 {
     ThreadContext* threadContext = (ThreadContext*) arg;
 
     unsigned long int myIndex = 0;
-    for (int i = 0; i < 1000000; i++) {
+    //the thread pick an index to work on:
+    myIndex = threadContext->p_job->addAtomicCounter();
+    while (myIndex  < threadContext->p_job->getAtomicCounterInputSize()){
+
+        // if the index is ok, perform the appropriate function of the client of the pair in the index.
+        std::cout << "Hello, Im thread number: " << threadContext->threadID << "\nMy index is: " << myIndex << '\n'<<std::flush;
+
+        // get the matching pair from the index:
+        InputPair inputPair = threadContext->p_job->getInputVec().at(myIndex);
+        threadContext->p_job->getClient().map(inputPair.first,
+                                              inputPair.second,threadContext->p_intermediateVector);
+
+
 
         myIndex = threadContext->p_job->addAtomicCounter();
-        std::cout << "Hello, Im thread number: " << threadContext->threadID <<"\nMy index is: "<<myIndex<<'\n';
-        pthread_mutex_lock(threadContext->p_job->counter_mutex);
-        threadContext->p_job->getTest()->insert(myIndex);
-        threadContext->p_job->getTest()->insert(myIndex);
-        pthread_mutex_unlock(threadContext->p_job->counter_mutex);
-
     }
+    // each thread will sort its intermidateVector:
+
+
+
+
     return 0;
 }
+
+
+
 
 
 void error_handler_function(const std::string& inputMessage){
@@ -149,7 +172,3 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     return static_cast<JobHandle> (job);
 }
 
-void emit2 (K2* key, V2* value, void* context){
-    auto* p_intermediateVec = (IntermediateVec*) context;
-    p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
-}
