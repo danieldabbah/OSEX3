@@ -7,18 +7,21 @@
 
 class Job;
 
+using namespace std;
 struct ThreadContext{
     int threadID;
     Job* p_job;
+    IntermediateVec* p_intermediateVector;
 };
-
+//safafas
 class Job{
     private:
         const int multiThreadLevel;
         pthread_t* threads;
         ThreadContext* threadContexts;
+        IntermediateVec* p_intermediateVectors;
         const MapReduceClient& client;
-        const InputVec inputVec;
+        const InputVec& inputVec;
         OutputVec* outputVec;
         JobState state;
         std::atomic<uint64_t>* p_atomic_counter; // 0-30 counter, 31-61 input size, 62-63 stage
@@ -39,6 +42,7 @@ class Job{
             outputVec = outputVec;
             threads = new pthread_t[multiThreadLevel];
             threadContexts = new ThreadContext[multiThreadLevel];
+            p_intermediateVectors = new IntermediateVec[multiThreadLevel];
             this->state = {UNDEFINED_STAGE,0};
             this->p_atomic_counter = new std::atomic<uint64_t>(inputVec.size() << 31);
             this->test = new std::set<int>();
@@ -138,10 +142,5 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
         pthread_join(threads[i], NULL);
     }
     std::cout<<std::endl<< "size of test is: "<<job->getTest()->size();
-
     return static_cast<JobHandle> (job);
-
-
-
-
 }
