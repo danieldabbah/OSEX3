@@ -11,7 +11,7 @@ using namespace std;
 struct ThreadContext{
     int threadID;
     Job* p_job;
-    IntermediateVec* p_intermediateVector;
+    IntermediateVec* p_pesonalThreadVector;
 };
 
 class Job{
@@ -19,7 +19,7 @@ class Job{
         const int multiThreadLevel;
         pthread_t* threads;
         ThreadContext* threadContexts;
-        IntermediateVec* p_intermediateVectors;
+        IntermediateVec* p_personalThreadVectors;
         const MapReduceClient& client;
         const InputVec& inputVec;
         OutputVec* outputVec;
@@ -40,7 +40,7 @@ class Job{
             outputVec = outputVec;
             threads = new pthread_t[multiThreadLevel];
             threadContexts = new ThreadContext[multiThreadLevel];
-            p_intermediateVectors = new IntermediateVec[multiThreadLevel];
+            p_personalThreadVectors = new IntermediateVec[multiThreadLevel];
             this->state = {UNDEFINED_STAGE,0};
             this->p_atomic_counter = new std::atomic<uint64_t>(inputVec.size() << 31);
         }
@@ -48,7 +48,7 @@ class Job{
         virtual ~Job() {
             free(this->threads);
             free(this->threadContexts);
-            free(this->p_intermediateVectors);
+            free(this->p_personalThreadVectors);
             free(this->p_atomic_counter);
         }
 
@@ -87,7 +87,7 @@ class Job{
         }
 
         IntermediateVec *getPIntermediateVectors() const {
-            return p_intermediateVectors;
+            return p_personalThreadVectors;
         }
 
     const InputVec &getInputVec() const {
@@ -118,7 +118,7 @@ void* threadMainFunction(void* arg)
         // get the matching pair from the index:
         InputPair inputPair = threadContext->p_job->getInputVec().at(myIndex);
         threadContext->p_job->getClient().map(inputPair.first,
-                                              inputPair.second,threadContext->p_intermediateVector);
+                                              inputPair.second,threadContext->p_pesonalThreadVector);
 
 
 
