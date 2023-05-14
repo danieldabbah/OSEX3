@@ -129,18 +129,23 @@ int main(int argc, char** argv)
     CounterClient client;
     InputVec inputVec;
     OutputVec *outputVec = new OutputVec();
-    VString s1("ab");
-    VString s2("da");
-    VString s3("aeeeeeeeeeeeee");
-    inputVec.push_back({nullptr, &s1});
-    inputVec.push_back({nullptr, &s2});
-    inputVec.push_back({nullptr, &s3});
+    VString *s1 = nullptr;
+    VString *s2 = nullptr;
+    VString *s3 = nullptr;
+    for (int i = 0; i <100; i++){
+        s1 = new VString("ab");
+        s2 = new VString("da");
+        s3 = new VString("aeeeeeeeeee");
+        inputVec.push_back({nullptr, s1});
+        inputVec.push_back({nullptr, s2});
+        inputVec.push_back({nullptr, s3});
+    }
 //    for (int i = 0; i < 100; ++i) {
 //        inputVec.push_back({nullptr, &s3});
 //    }
-
     JobHandle job = startMapReduceJob(client, inputVec, *outputVec, 4);
-
+    waitForJob(job);
+    std::cout << "done!" << std::endl;
 
 
 

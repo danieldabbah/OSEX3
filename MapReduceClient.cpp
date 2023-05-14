@@ -16,6 +16,7 @@
 
 
 class Job;
+void* threadMainFunction(void* arg);
 
 using namespace std;
 struct ThreadContext{
@@ -40,6 +41,7 @@ class Job{
         //TODO: in the destructor release the new
         pthread_mutex_t outputVectorMutex;
         vector<IntermediateVec*> intermediateVec;
+        bool waitCalled = false;
 
     public:
         Job(const int multiThreadLevel,
@@ -54,6 +56,12 @@ class Job{
             this->p_atomic_counter = new std::atomic<uint64_t>(inputVec.size() << 31);
             this->p_afterShuffleBarrier = new Barrier(multiThreadLevel);
             this->p_afterSortBarrier = new Barrier(multiThreadLevel);
+            for (int i = 0; i < multiThreadLevel; ++i) {
+                threadContexts[i] = {i, this, &(p_personalThreadVectors[i])};
+            }
+            for (int i = 0; i < multiThreadLevel; ++i) {
+                pthread_create(&threads[i], NULL,threadMainFunction , &threadContexts[i]);
+            }
         }
 
 
@@ -111,10 +119,23 @@ class Job{
             return p_afterSortBarrier;
         }
 
+        bool wasWaitCalled(){
+            return waitCalled;
+        }
+
+        void setWaitCalled(bool waitCalled) {
+            Job::waitCalled = waitCalled;
+        }
+
+        pthread_t *getThreads() const {
+            return threads;
+        }
+
     //========================= atomic counter ======================================
 
         unsigned long int addAtomicCounter(){
-           return ((*this->p_atomic_counter)++) & (0x7fffffff);
+            unsigned long int ret = (*this->p_atomic_counter)++;
+           return ret & (0x7fffffff);
         }
 
         void setAtomicCounterInputSize(unsigned long int size){
@@ -182,11 +203,11 @@ bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
 }
 
 void mapAndSort(ThreadContext* tc){
-
     unsigned long int myIndex = 0;
     tc->p_job->setAtomicCounterStage(1);
     myIndex = tc->p_job->addAtomicCounter();     //the thread pick an index to work on:
     while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
+        cout << myIndex << " ";
         // if the index is ok, perform the appropriate function of the client of the pair in the index.
         // get the matching pair from the index:
         InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
@@ -291,8 +312,13 @@ void* threadMainFunction(void* arg)
         tc->p_job->resetAtomicCounterCount();
         tc->p_job->addStageAtomicCounter();
         tc->p_job->setAtomicCounterInputSize(tc->p_job->getIntermediateVec().size());
+        cout << endl << "after shuffle!" << endl;
+//        for (int i = 0; i < tc->p_job->getIntermediateVec().size(); i++){
+//            printVector2(*tc->p_job->getIntermediateVec().at(i), tc->threadID);
+//        }
     }
     tc->p_job->getPAfterShuffleBarrier()->barrier();
+
     reduce(tc);
 
 
@@ -300,7 +326,8 @@ void* threadMainFunction(void* arg)
 
     tc->p_job->getPAfterShuffleBarrier()->barrier();
     if (tc->threadID == 0){
-            printVector3(*tc->p_job->getOutputVector(), tc->threadID);
+        cout << endl << "after reduce!" << endl;
+        printVector3(*tc->p_job->getOutputVector(), tc->threadID);
     }
     return nullptr;
 }
@@ -323,23 +350,23 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     // allocate a job class on the heap
     Job* job = new Job(multiThreadLevel,client,inputVec,outputVec);
     // create all the threads:
-    pthread_t threads[multiThreadLevel];
-    ThreadContext threadContexts[multiThreadLevel];
+//    pthread_t threads[multiThreadLevel];
+//    ThreadContext threadContexts[multiThreadLevel];
     // set the job class to have access to the thread pointer
 
     //For loop that init all thread contexts:
-    for (int i = 0; i < multiThreadLevel; ++i) {
-        threadContexts[i] = {i,job, &(job->getPpersonalVectors()[i])};
-    }
+//    for (int i = 0; i < multiThreadLevel; ++i) {
+//        threadContexts[i] = {i,job, &(job->getPpersonalVectors()[i])};
+//    }
 
     //For loop that create all threads:
-    for (int i = 0; i < multiThreadLevel; ++i) {
-        pthread_create(&threads[i], NULL,threadMainFunction , &threadContexts[i]);
-    }
-    //TODO: remove pthread join (it need to be in another function), in the 'waitForJon' function
-    for (int i = 0; i < multiThreadLevel; ++i) {
-        pthread_join(threads[i], NULL);
-    }
+//    for (int i = 0; i < multiThreadLevel; ++i) {
+//        pthread_create(&threads[i], NULL,threadMainFunction , &threadContexts[i]);
+//    }
+   //TODO: remove pthread join (it need to be in another function), in the 'waitForJon' function
+//    for (int i = 0; i < multiThreadLevel; ++i) {
+//        pthread_join(threads[i], NULL);
+//    }
     return static_cast<JobHandle> (job);
 }
 
@@ -353,6 +380,17 @@ void getJobState(JobHandle job, JobState* state){
     }
 }
 
+
+void waitForJob(JobHandle job){
+    Job* p_job = static_cast<Job*>(job);
+    if(p_job->wasWaitCalled()){
+        return;
+    }
+    p_job->setWaitCalled(true);
+    for (int i = 0; i < p_job->getMultiThreadLevel(); ++i) {
+        pthread_join(p_job->getThreads()[i], NULL);
+    }
+}
 
 
 
