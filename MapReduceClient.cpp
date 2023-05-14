@@ -53,7 +53,6 @@ class Job{
                 outputVectorMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
             outputVec = outputVec;
-            //TODO: check if new command fail
             this->threads = new pthread_t[multiThreadLevel];
             this->threadContexts = new ThreadContext[multiThreadLevel];
             this->p_personalThreadVectors = new IntermediateVec[multiThreadLevel];
@@ -284,12 +283,10 @@ void* threadMainFunction(void* arg)
         shuffle(tc);
         tc->p_job->resetAtomicCounterCount();
         tc->p_job->addStageAtomicCounter();
+        tc->p_job->setAtomicCounterInputSize(tc->p_job->getIntermediateVec().size());
     }
     tc->p_job->getPAfterShuffleBarrier()->barrier();
-
-
-
-
+    reduce(tc);
     return nullptr;
 }
 
