@@ -118,7 +118,7 @@ class Job{
             *this->p_atomic_counter = ((*this->p_atomic_counter) & (0x3fffffffffffffff)) | (stage << 62);
         }
 
-        pthread_mutex_t &getTestMutex() {
+        pthread_mutex_t &getOutputVectorMutex() {
             return outputVectorMutex;
         }
 
@@ -261,14 +261,17 @@ void reduce(ThreadContext* tc){
 
         IntermediateVec* pairs = tc->p_job->getIntermediateVec().at(myIndex);
 
-        tc->p_job->getClient().reduce(pairs,tc->p_job->getOutputVector());
+        tc->p_job->getClient().reduce(pairs,tc);
         myIndex = tc->p_job->addAtomicCounter();
     }
 }
 
 void emit3(K3* key,V3* value,void* context){
-    auto p_outputVec = (OutputVec*) context;
-    p_outputVec->push_back(pair<K3*, V3*>(key, value));
+    ThreadContext* tc = (ThreadContext*) context;
+
+    pthread_mutex_lock(&tc->p_job->getOutputVectorMutex());
+    tc->p_job->getOutputVector()->push_back(pair<K3*, V3*>(key, value));
+    pthread_mutex_unlock(&tc->p_job->getOutputVectorMutex());
 }
 
 void* threadMainFunction(void* arg)
