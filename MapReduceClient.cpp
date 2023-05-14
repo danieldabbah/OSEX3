@@ -37,7 +37,6 @@ class Job{
         atomic<uint64_t> atomic_counter;        // 0-30 counter, 31-61 input size, 62-63 stage
         Barrier* p_afterSortBarrier;
         Barrier* p_afterShuffleBarrier;
-        //TODO: add mutexes
         //TODO: in the destructor release the new
         pthread_mutex_t outputVectorMutex;
         pthread_mutex_t atomicCounterMutex;
@@ -271,7 +270,7 @@ int findMaxKeyTid(ThreadContext* tc){
     return saveId;
 }
 
-void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each phase counter and the phase itself. set the counter to 0 after each phase.
+void shuffle(ThreadContext* tc){
     unsigned long int outputSize = 0;
     for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
         outputSize += tc->p_job->getPpersonalVectors()[i].size();
@@ -286,11 +285,11 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
         IntermediatePair  currentPair = tc->p_job->getPpersonalVectors()[threadIdOfMax].back();
         // create intermidate vector
         for (int i = 0; i < tc->p_job->getMultiThreadLevel(); ++i) { // for every thread personal vector
-            //TODO: personal vector can be empty
+
             while( !(tc->p_job->getPpersonalVectors()[i].empty())&&  isEqualKeys(tc->p_job->getPpersonalVectors()[i].back(), currentPair)){ //get all equal key pairs
                 p_currentVec->push_back(tc->p_job->getPpersonalVectors()[i].back());
                 tc->p_job->getPpersonalVectors()[i].pop_back();
-                //TODO: need to update count only in the end or at each element
+
                 count++;
             }
         }
@@ -304,9 +303,8 @@ void reduce(ThreadContext* tc){
     unsigned long int myIndex = 0;
     //the thread pick an index to work on:
     myIndex = tc->p_job->addAtomicCounter();
-    //TODO: add call to reduce in the thread main function
-    //TODO: add mutex before the insert to the output vector
-    //TODO: change the size of the inputVector
+
+
     while (myIndex < tc->p_job->getAtomicCounterInputSize()){
 
         IntermediateVec* pairs = tc->p_job->getIntermediateVec().at(myIndex);
@@ -361,10 +359,10 @@ void error_handler_function(const std::string& inputMessage){
 
 //========================= main exercise questions ======================================
 
-// TODO: create a thread context class/ struct that have thread id, and relavent data
-//TODO: create a job class
-// TODO: create the "main" function for each thread
-//TODO: add to the job class all the init of the input vector, interminate vector, output vector
+
+
+
+
 JobHandle startMapReduceJob(const MapReduceClient& client,
                             const InputVec& inputVec, OutputVec& outputVec,
                             int multiThreadLevel){
@@ -372,7 +370,7 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
 }
 
 void getJobState(JobHandle job, JobState* state){
-    //TODO: may return the wrong values if a context switch occurs in the middle of the deviation
+
     Job* p_job = static_cast<Job*>(job);
     state->stage = p_job->getAtomicCounterState();
     state->percentage = (100*(float)p_job->getAtomicCounterCurrent()) / (float)p_job->getAtomicCounterInputSize();

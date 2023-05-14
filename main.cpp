@@ -53,6 +53,7 @@ public:
         for(const char& c : static_cast<const VString*>(value)->content) {
             counts[(unsigned char) c]++;
         }
+
         for (int i = 0; i < 256; ++i) {
             if (counts[i] == 0)
                 continue;
