@@ -7,14 +7,6 @@
 #include "Barrier.h"
 #include "MapReduceFramework.h"
 
-
-
-
-
-//TODO: for each data type, check if we need to add mutex to it.
-
-
-
 class Job;
 void* threadMainFunction(void* arg);
 
