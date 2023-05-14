@@ -36,10 +36,7 @@ class Job{
         // 0-30 counter, 31-61 input size, 62-63 stage
         std::set<int>* test;
         Barrier* p_afterSortBarrier;
-
-        bool beforeShuffle = true;
-        pthread_cond_t condBeforeShuffle;
-        pthread_mutex_t mutexBeforeShuffle;
+        Barrier* p_afterShuffleBarrier;
         //TODO: add mutexes
         //TODO: in the destructor release the new
         pthread_mutex_t testMutex;
@@ -50,26 +47,10 @@ class Job{
             return intermediateVec;
         }
 
-        bool isBeforeShuffle() const {
-            return beforeShuffle;
-        }
-
-        void setBeforeShuffle(bool beforeShuffle) {
-            Job::beforeShuffle = beforeShuffle;
-        }
-
-        pthread_cond_t *getCondBeforeShuffle()  {
-            return &condBeforeShuffle;
-        }
-
-        pthread_mutex_t *getMutexBeforeShuffle() {
-            return &mutexBeforeShuffle;
-        }
 
         Job(const int multiThreadLevel,
             const MapReduceClient& client,
             const InputVec& inputVec, OutputVec& outputVec):
-                mutexBeforeShuffle(PTHREAD_MUTEX_INITIALIZER), condBeforeShuffle(PTHREAD_COND_INITIALIZER),
                 testMutex(PTHREAD_MUTEX_INITIALIZER),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
             //TODO: check if new command fail
@@ -79,17 +60,15 @@ class Job{
             p_personalThreadVectors = new IntermediateVec[multiThreadLevel];
             this->state = {UNDEFINED_STAGE,0};
             this->p_atomic_counter = new std::atomic<uint64_t>(inputVec.size() << 31);
-
+            p_afterShuffleBarrier = new Barrier(multiThreadLevel);
             p_afterSortBarrier = new Barrier(multiThreadLevel);
-            pthread_mutex_init(&mutexBeforeShuffle, nullptr);
-            pthread_cond_init(&condBeforeShuffle, nullptr);
         }
 
-    const int getMultiThreadLevel() const {
-        return multiThreadLevel;
-    }
+        int getMultiThreadLevel() const {
+            return multiThreadLevel;
+        }
 
-    virtual ~Job() {
+        virtual ~Job() {
             free(this->threads);
             free(this->threadContexts);
             free(this->p_personalThreadVectors);
@@ -108,6 +87,10 @@ class Job{
             (*this->p_atomic_counter) += ((unsigned long int)1 << 62);
         }
 
+        Barrier *getPAfterShuffleBarrier() const {
+            return p_afterShuffleBarrier;
+        }
+
         unsigned long int getAtomicCounterCurrent(){
             return (this->p_atomic_counter->load()) & (0x7fffffff);
         }
@@ -120,11 +103,11 @@ class Job{
             return stage_t((this->p_atomic_counter->load()) >> 62);
         }
 
-    pthread_mutex_t &getTestMutex() {
-        return testMutex;
-    }
+        pthread_mutex_t &getTestMutex() {
+            return testMutex;
+        }
 
-    const std::atomic<uint64_t>* getAtomicCounter(){
+        const std::atomic<uint64_t>* getAtomicCounter(){
             return this->p_atomic_counter;
         }
         OutputVec* getOutputVector(){
@@ -138,17 +121,17 @@ class Job{
             return p_personalThreadVectors;
         }
 
-    const InputVec &getInputVec() const {
-        return inputVec;
-    }
+        const InputVec &getInputVec() const {
+            return inputVec;
+        }
 
-    const MapReduceClient &getClient() const {
-        return client;
-    }
+        const MapReduceClient &getClient() const {
+            return client;
+        }
 
-    Barrier *getPAfterSortBarrier() const {
-        return p_afterSortBarrier;
-    }
+        Barrier *getPAfterSortBarrier() const {
+            return p_afterSortBarrier;
+        }
 };
 void emit2 (K2* key, V2* value, void* context){
     auto* p_intermediateVec = (IntermediateVec*) context;
@@ -168,8 +151,7 @@ void mapAndSort(ThreadContext* tc){
         // get the matching pair from the index:
         InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
 
-        tc->p_job->getClient().map(inputPair.first,
-                                              inputPair.second,tc->p_pesonalThreadVector);
+        tc->p_job->getClient().map(inputPair.first,inputPair.second,tc->p_pesonalThreadVector);
         myIndex = tc->p_job->addAtomicCounter();
     }
     // each thread will sort its intermidateVector:
@@ -205,28 +187,11 @@ void* threadMainFunction(void* arg)
     mapAndSort(tc);
 
     tc->p_job->getPAfterSortBarrier()->barrier();
-
-    pthread_mutex_lock(tc->p_job->getMutexBeforeShuffle());
-    if (tc->p_job->isBeforeShuffle()){
-        if (tc->threadID == 0){
-            //perform shuffle
-            cout << "thread ID: " << tc->threadID << "  will preform a shuffle"<< endl;
-            tc->p_job->setBeforeShuffle(false);
-            pthread_cond_broadcast(tc->p_job->getCondBeforeShuffle());
-        } else {
-            cout << "thread ID: " << tc->threadID << "  gonna wait"<< endl;
-            pthread_cond_wait(tc->p_job->getCondBeforeShuffle(), tc->p_job->getMutexBeforeShuffle());
-            cout << "thread ID: " << tc->threadID << "  done waiting"<< endl;
-        }
+    if (tc->threadID == 0) {
+        shuffle(tc);
     }
-    pthread_mutex_unlock(tc->p_job->getMutexBeforeShuffle());
-    cout << "thread ID: " << tc->threadID << "  after mutex" << endl;
+    tc->p_job->getPAfterShuffleBarrier()->barrier();
 
-
-//
-//    pthread_mutex_lock(&tc->p_job->getTestMutex());
-//    printVector2(*tc->p_pesonalThreadVector, tc->threadID);
-//    pthread_mutex_unlock(&tc->p_job->getTestMutex());
 
     return nullptr;
 }
@@ -271,3 +236,27 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
     return static_cast<JobHandle> (job);
 }
 
+
+
+
+//    pthread_mutex_lock(tc->p_job->getMutexBeforeShuffle());
+//    if (tc->p_job->isBeforeShuffle()){
+//        if (tc->threadID == 0){
+//            //perform shuffle
+//            cout << "thread ID: " << tc->threadID << "  will preform a shuffle"<< endl;
+//            tc->p_job->setBeforeShuffle(false);
+//            pthread_cond_broadcast(tc->p_job->getCondBeforeShuffle());
+//        } else {
+//            cout << "thread ID: " << tc->threadID << "  gonna wait"<< endl;
+//            pthread_cond_wait(tc->p_job->getCondBeforeShuffle(), tc->p_job->getMutexBeforeShuffle());
+//            cout << "thread ID: " << tc->threadID << "  done waiting"<< endl;
+//        }
+//    }
+//    pthread_mutex_unlock(tc->p_job->getMutexBeforeShuffle());
+//    cout << "thread ID: " << tc->threadID << "  after mutex" << endl;
+
+
+//
+//    pthread_mutex_lock(&tc->p_job->getTestMutex());
+//    printVector2(*tc->p_pesonalThreadVector, tc->threadID);
+//    pthread_mutex_unlock(&tc->p_job->getTestMutex());
