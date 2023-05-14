@@ -43,7 +43,7 @@ class Job{
         vector<IntermediateVec> intermediateVec;
 
     public:
-        const vector<IntermediateVec> &getIntermediateVec() const {
+        vector<IntermediateVec> &getIntermediateVec(){
             return intermediateVec;
         }
 
@@ -167,6 +167,30 @@ void printVector2(vector<pair<K2*, V2*>> &vec, int vecId){
         it->second->print();
         cout << endl;
     }
+}
+
+/**
+ * finds the index of the thread who has the largest key
+ * @param tc thread context containing job
+ * @return the index, -1 if the vectors are empty
+ */
+int findMaxKeyTid(ThreadContext* tc){
+    if (tc->p_job->getIntermediateVec().empty()){
+        return -1;
+    }
+    K2 *maxKey = nullptr;
+    int saveI = -1;
+    vector<pair<K2*, V2*>>* curVector;
+    for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
+        curVector = &tc->p_job->getIntermediateVec().at(i);
+        if (!curVector->empty()){
+            if (maxKey == nullptr || *maxKey < *curVector->back().first) {
+                maxKey = curVector->back().first;
+                saveI = i;
+            }
+        }
+    }
+    return saveI;
 }
 
 void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each phase counter and the phase itself. set the counter to 0 after each phase.
