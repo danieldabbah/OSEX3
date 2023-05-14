@@ -193,7 +193,6 @@ void mapAndSort(ThreadContext* tc){
     sort(tc->p_personalThreadVector->begin(), tc->p_personalThreadVector->end(), cmpKeys);
 }
 
-
 //========================= shuffle phase ======================================
 bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
     return *a.first < *b.first;
