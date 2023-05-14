@@ -177,6 +177,10 @@ void emit2 (K2* key, V2* value, void* context){
     p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
 }
 
+bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
+    return *a.first < *b.first;
+}
+
 void mapAndSort(ThreadContext* tc){
 
     unsigned long int myIndex = 0;
@@ -194,9 +198,7 @@ void mapAndSort(ThreadContext* tc){
 }
 
 //========================= shuffle phase ======================================
-bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
-    return *a.first < *b.first;
-}
+
 
 bool isEqualKeys(const IntermediatePair &a, const IntermediatePair &b){
     return !cmpKeys(a,b) &&!cmpKeys(b,a);
