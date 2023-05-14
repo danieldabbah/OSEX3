@@ -47,7 +47,7 @@ class Job{
             const InputVec& inputVec, OutputVec& outputVec):
                 outputVectorMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
-            outputVec = outputVec;
+            this->outputVec = &outputVec;
             this->threads = new pthread_t[multiThreadLevel];
             this->threadContexts = new ThreadContext[multiThreadLevel];
             this->p_personalThreadVectors = new IntermediateVec[multiThreadLevel];
@@ -234,7 +234,7 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
     tc->p_job->resetAtomicCounterCount();
     tc->p_job->setAtomicCounterInputSize(outputSize);
     unsigned long int count = 0;
-    while(count <= outputSize){ // if count > outputsize, break
+    while(count < outputSize){ // if count > outputsize, break
         int threadIdOfMax = findMaxKeyTid(tc); // find the index of the thread that contains the maximum key.
         IntermediateVec* p_currentVec = new IntermediateVec();
         IntermediatePair  currentPair = tc->p_job->getPpersonalVectors()[threadIdOfMax].back();

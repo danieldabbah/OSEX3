@@ -75,7 +75,7 @@ public:
         KChar* k3 = new KChar(c);
         VCount* v3 = new VCount(count);
         usleep(150000);
-        //emit3(k3, v3, context);
+        emit3(k3, v3, context);
     }
 };
 
@@ -128,10 +128,10 @@ int main(int argc, char** argv)
 
     CounterClient client;
     InputVec inputVec;
-    OutputVec outputVec;
-    VString s1("iiiThhhhhis");
-    VString s2("Multi");
-    VString s3("cracce");
+    OutputVec *outputVec = new OutputVec();
+    VString s1("ab");
+    VString s2("da");
+    VString s3("a");
     inputVec.push_back({nullptr, &s1});
     inputVec.push_back({nullptr, &s2});
     inputVec.push_back({nullptr, &s3});
@@ -139,7 +139,7 @@ int main(int argc, char** argv)
 //        inputVec.push_back({nullptr, &s3});
 //    }
 
-    JobHandle job = startMapReduceJob(client, inputVec, outputVec, 4);
+    JobHandle job = startMapReduceJob(client, inputVec, *outputVec, 4);
 
 
 
