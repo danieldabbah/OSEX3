@@ -148,10 +148,10 @@ class Job{
 
 
 //========================= helpers to delete ======================================
-void printVector2(vector<pair<K2*, V2*>> &vec, int vecId){
+void printVector2(vector<pair<K2*, V2*>> &vec, int threadId){
     cout<<endl;
     for (auto it = vec.begin(); it != vec.end(); it++){
-        cout << "thread: " << vecId << " key:" ;
+        cout << "thread: " << threadId << " key:" ;
         it->first->print();
         cout << " value: ";
         it->second->print();
@@ -294,6 +294,14 @@ void* threadMainFunction(void* arg)
     }
     tc->p_job->getPAfterShuffleBarrier()->barrier();
     reduce(tc);
+
+
+
+
+    tc->p_job->getPAfterShuffleBarrier()->barrier();
+    if (tc->threadID == 0){
+            printVector3(*tc->p_job->getOutputVector(), tc->threadID);
+    }
     return nullptr;
 }
 

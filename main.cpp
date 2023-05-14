@@ -131,7 +131,7 @@ int main(int argc, char** argv)
     OutputVec *outputVec = new OutputVec();
     VString s1("ab");
     VString s2("da");
-    VString s3("a");
+    VString s3("aeeeeeeeeeeeee");
     inputVec.push_back({nullptr, &s1});
     inputVec.push_back({nullptr, &s2});
     inputVec.push_back({nullptr, &s3});
