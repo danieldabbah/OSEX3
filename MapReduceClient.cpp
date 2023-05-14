@@ -37,7 +37,6 @@ class Job{
         atomic<uint64_t> atomic_counter;        // 0-30 counter, 31-61 input size, 62-63 stage
         Barrier* p_afterSortBarrier;
         Barrier* p_afterShuffleBarrier;
-        //TODO: in the destructor release the new
         pthread_mutex_t outputVectorMutex;
         pthread_mutex_t atomicCounterMutex;
         vector<IntermediateVec*> intermediateVec;
@@ -50,6 +49,7 @@ class Job{
                 atomic_counter(inputVec.size() << 31), atomicCounterMutex(PTHREAD_MUTEX_INITIALIZER),
                 outputVectorMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
+            //TODO: how to handle error from initializer list
             this->outputVec = &outputVec;
             this->threads = new pthread_t[multiThreadLevel];
             this->threadContexts = new ThreadContext[multiThreadLevel];
@@ -61,10 +61,9 @@ class Job{
             }
             for (int i = 0; i < multiThreadLevel; ++i) {
                 pthread_create(&threads[i], NULL,threadMainFunction , &threadContexts[i]);
+                //TODO: handle error
             }
         }
-
-
 
         virtual ~Job() {
             while (!this->intermediateVec.empty()){
@@ -79,7 +78,11 @@ class Job{
             if(pthread_mutex_destroy(&this->outputVectorMutex) != 0){
                 //TODO: handle error
             }
+            if(pthread_mutex_destroy(&this->atomicCounterMutex) != 0){
+                //TODO: handle error
+            }
         }
+
 
     //========================= get and set ======================================
         int getMultiThreadLevel() const {
@@ -118,7 +121,7 @@ class Job{
             return p_afterSortBarrier;
         }
 
-        bool wasWaitCalled(){
+        bool wasWaitCalled() const{
             return waitCalled;
         }
 
@@ -134,8 +137,8 @@ class Job{
             return atomicCounterMutex;
         }
 
-    //========================= atomic counter ======================================
 
+    //========================= atomic counter ======================================
         unsigned long int addAtomicCounter(){
             pthread_mutex_lock(&atomicCounterMutex);
             unsigned long int ret =  (0x7fffffff) & this->atomic_counter++;
@@ -181,7 +184,6 @@ class Job{
             pthread_mutex_unlock(&atomicCounterMutex);
             return ret;
         }
-
         void setAtomicCounterStage(unsigned long int stage){
             pthread_mutex_lock(&atomicCounterMutex);
             this->atomic_counter = ((this->atomic_counter) & (0x3fffffffffffffff)) | (stage << 62);
@@ -213,14 +215,8 @@ void printVector3(vector<pair<K3*, V3*>> &vec, int vecId){
     }
 }
 
+
 //========================= map and sort phase ======================================
-
-
-void emit2 (K2* key, V2* value, void* context){
-    auto p_intermediateVec = (IntermediateVec*) context;
-    p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
-}
-
 bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
     return *a.first < *b.first;
 }
@@ -231,7 +227,6 @@ void mapAndSort(ThreadContext* tc){
     myIndex = tc->p_job->addAtomicCounter();     //the thread pick an index to work on:
     cout << " " << myIndex << " " << "my id = " <<tc->threadID <<  endl ;
     while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
-
         // if the index is ok, perform the appropriate function of the client of the pair in the index.
         // get the matching pair from the index:
         InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
@@ -242,13 +237,11 @@ void mapAndSort(ThreadContext* tc){
     sort(tc->p_personalThreadVector->begin(), tc->p_personalThreadVector->end(), cmpKeys);
 }
 
+
 //========================= shuffle phase ======================================
-
-
 bool isEqualKeys(const IntermediatePair &a, const IntermediatePair &b){
     return !cmpKeys(a,b) &&!cmpKeys(b,a);
 }
-
 /**
  * finds the index of the thread who has the largest key
  * @param tc thread context containing job
@@ -285,7 +278,6 @@ void shuffle(ThreadContext* tc){
         IntermediatePair  currentPair = tc->p_job->getPpersonalVectors()[threadIdOfMax].back();
         // create intermidate vector
         for (int i = 0; i < tc->p_job->getMultiThreadLevel(); ++i) { // for every thread personal vector
-
             while( !(tc->p_job->getPpersonalVectors()[i].empty())&&  isEqualKeys(tc->p_job->getPpersonalVectors()[i].back(), currentPair)){ //get all equal key pairs
                 p_currentVec->push_back(tc->p_job->getPpersonalVectors()[i].back());
                 tc->p_job->getPpersonalVectors()[i].pop_back();
@@ -297,33 +289,21 @@ void shuffle(ThreadContext* tc){
     }
 }
 
-//========================= reduce phase ======================================
 
+//========================= reduce phase ======================================
 void reduce(ThreadContext* tc){
     unsigned long int myIndex = 0;
     //the thread pick an index to work on:
     myIndex = tc->p_job->addAtomicCounter();
-
-
     while (myIndex < tc->p_job->getAtomicCounterInputSize()){
-
         IntermediateVec* pairs = tc->p_job->getIntermediateVec().at(myIndex);
-
         tc->p_job->getClient().reduce(pairs,tc);
         myIndex = tc->p_job->addAtomicCounter();
     }
 }
 
-void emit3(K3* key,V3* value,void* context){
-    ThreadContext* tc = (ThreadContext*) context;
-
-    pthread_mutex_lock(&tc->p_job->getOutputVectorMutex());
-    tc->p_job->getOutputVector()->push_back(pair<K3*, V3*>(key, value));
-    pthread_mutex_unlock(&tc->p_job->getOutputVectorMutex());
-}
 
 //========================= main thread logic ======================================
-
 void* threadMainFunction(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
@@ -337,12 +317,7 @@ void* threadMainFunction(void* arg)
         cout << endl << "after shuffle!" << endl;
     }
     tc->p_job->getPAfterShuffleBarrier()->barrier();
-
     reduce(tc);
-
-
-
-
     tc->p_job->getPAfterShuffleBarrier()->barrier();
     if (tc->threadID == 0){
         cout << endl << "after reduce!" << endl;
@@ -358,11 +333,6 @@ void error_handler_function(const std::string& inputMessage){
 }
 
 //========================= main exercise questions ======================================
-
-
-
-
-
 JobHandle startMapReduceJob(const MapReduceClient& client,
                             const InputVec& inputVec, OutputVec& outputVec,
                             int multiThreadLevel){
@@ -379,7 +349,6 @@ void getJobState(JobHandle job, JobState* state){
     }
 }
 
-
 void waitForJob(JobHandle job){
     Job* p_job = static_cast<Job*>(job);
     if(p_job->wasWaitCalled()){
@@ -387,6 +356,29 @@ void waitForJob(JobHandle job){
     }
     p_job->setWaitCalled(true);
     for (int i = 0; i < p_job->getMultiThreadLevel(); ++i) {
-        pthread_join(p_job->getThreads()[i], NULL);
+        pthread_join(p_job->getThreads()[i], nullptr);
     }
+}
+
+void emit3(K3* key,V3* value,void* context){
+    ThreadContext* tc = (ThreadContext*) context;
+
+    pthread_mutex_lock(&tc->p_job->getOutputVectorMutex());
+    tc->p_job->getOutputVector()->push_back(pair<K3*, V3*>(key, value));
+    pthread_mutex_unlock(&tc->p_job->getOutputVectorMutex());
+}
+
+void emit2 (K2* key, V2* value, void* context){
+    auto p_intermediateVec = (IntermediateVec*) context;
+    p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
+}
+
+void closeJobHandle(JobHandle job){
+    JobState state = {UNDEFINED_STAGE, 0.0};
+    getJobState(job, &state);
+    if(state.percentage != 100 || state.stage != REDUCE_STAGE){
+        waitForJob(job);
+    }
+    Job* p_job = static_cast<Job*>(job);
+    free(p_job);
 }
