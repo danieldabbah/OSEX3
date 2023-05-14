@@ -19,7 +19,7 @@ using namespace std;
 struct ThreadContext{
     int threadID;
     Job* p_job;
-    IntermediateVec* p_pesonalThreadVector;
+    IntermediateVec* p_personalThreadVector;
 };
 
 class Job{
@@ -32,8 +32,7 @@ class Job{
         const InputVec& inputVec;
         OutputVec* outputVec;
         JobState state;
-        atomic<uint64_t>* p_atomic_counter;
-        // 0-30 counter, 31-61 input size, 62-63 stage
+        atomic<uint64_t>* p_atomic_counter;        // 0-30 counter, 31-61 input size, 62-63 stage
         std::set<int>* test;
         Barrier* p_afterSortBarrier;
         Barrier* p_afterShuffleBarrier;
@@ -55,7 +54,7 @@ class Job{
                 testMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
             outputVec = outputVec;
-            this->state = {UNDEFINED_STAGE,0};
+            this->state = {UNDEFINED_STAGE,0}; //TODO: advance stage and percentage with atomic counter may need a mutex
             //TODO: check if new command fail
             this->threads = new pthread_t[multiThreadLevel];
             this->threadContexts = new ThreadContext[multiThreadLevel];
@@ -98,7 +97,7 @@ class Job{
         }
 
         void resetAtomicCounterCount(){
-            *this->p_atomic_counter = (*this->p_atomic_counter) && (0xffffffff80000000);
+            *this->p_atomic_counter = (*this->p_atomic_counter) & (0xffffffff80000000);
         }
 
         Barrier *getPAfterShuffleBarrier() const {
@@ -172,11 +171,11 @@ void mapAndSort(ThreadContext* tc){
         // if the index is ok, perform the appropriate function of the client of the pair in the index.
         // get the matching pair from the index:
         InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
-        tc->p_job->getClient().map(inputPair.first,inputPair.second,tc->p_pesonalThreadVector);
+        tc->p_job->getClient().map(inputPair.first,inputPair.second,tc->p_personalThreadVector);
         myIndex = tc->p_job->addAtomicCounter();
     }
 
-    sort(tc->p_pesonalThreadVector->begin(), tc->p_pesonalThreadVector->end(), cmpKeys);
+    sort(tc->p_personalThreadVector->begin(), tc->p_personalThreadVector->end(), cmpKeys);
 }
 
 void printVector2(vector<pair<K2*, V2*>> &vec, int vecId){
@@ -348,5 +347,5 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
 
 //
 //    pthread_mutex_lock(&tc->p_job->getTestMutex());
-//    printVector2(*tc->p_pesonalThreadVector, tc->threadID);
+//    printVector2(*tc->p_personalThreadVector, tc->threadID);
 //    pthread_mutex_unlock(&tc->p_job->getTestMutex());
