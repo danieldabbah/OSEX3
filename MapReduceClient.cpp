@@ -139,7 +139,7 @@ void emit2 (K2* key, V2* value, void* context){
 }
 
 bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
-    return a.first < b.first;
+    return *a.first < *b.first;
 }
 
 void mapAndSort(ThreadContext* tc){
@@ -179,18 +179,18 @@ int findMaxKeyTid(ThreadContext* tc){
         return -1;
     }
     K2 *maxKey = nullptr;
-    int saveI = -1;
+    int saveId = -1;
     vector<pair<K2*, V2*>>* curVector;
     for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
         curVector = &tc->p_job->getIntermediateVec().at(i);
         if (!curVector->empty()){
             if (maxKey == nullptr || *maxKey < *curVector->back().first) {
                 maxKey = curVector->back().first;
-                saveI = i;
+                saveId = i;
             }
         }
     }
-    return saveI;
+    return saveId;
 }
 
 void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each phase counter and the phase itself. set the counter to 0 after each phase.
