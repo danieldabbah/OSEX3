@@ -9,7 +9,7 @@
 
 
 
-
+//TODO: for each data type, check if we need to add mutex to it.
 
 
 
@@ -158,6 +158,7 @@ void mapAndSort(ThreadContext* tc){
         tc->p_job->getClient().map(inputPair.first,inputPair.second,tc->p_pesonalThreadVector);
         myIndex = tc->p_job->addAtomicCounter();
     }
+
     // each thread will sort its intermidateVector:
     //sort(tc->p_pesonalThreadVector->begin(), tc->p_pesonalThreadVector->end(), cmpKeys);
 }
@@ -221,6 +222,29 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
     }
 }
 
+
+void reduce(ThreadContext* tc){
+
+    unsigned long int myIndex = 0;
+    //the thread pick an index to work on:
+    myIndex = tc->p_job->addAtomicCounter();
+    // TODO: need to change the atmoic counter, input size are to be the size of the output Vector
+    //TODO: add call to reduce in the thread main function
+    //TODO: add mutex before the insert to the output vector
+    while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
+
+        IntermediateVec* pairs = tc->p_job->getIntermediateVec().at(myIndex);
+
+        tc->p_job->getClient().reduce(pairs,tc->p_job->getOutputVector());
+        myIndex = tc->p_job->addAtomicCounter();
+    }
+}
+
+void emit3(K3* key,V3* value,void* context){
+    auto* p_outputVec = (OutputVec*) context;
+    p_outputVec->push_back(pair<K3*, V3*>(key, value));
+}
+
 void* threadMainFunction(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
@@ -231,6 +255,8 @@ void* threadMainFunction(void* arg)
         shuffle(tc);
     }
     tc->p_job->getPAfterShuffleBarrier()->barrier();
+
+
 
 
     return nullptr;
