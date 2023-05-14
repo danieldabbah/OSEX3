@@ -9,6 +9,8 @@
 
 
 
+
+
 //TODO: for each data type, check if we need to add mutex to it.
 
 
@@ -32,7 +34,6 @@ class Job{
         const InputVec& inputVec;
         OutputVec* outputVec;
         atomic<uint64_t>* p_atomic_counter;        // 0-30 counter, 31-61 input size, 62-63 stage
-        std::set<int>* test;
         Barrier* p_afterSortBarrier;
         Barrier* p_afterShuffleBarrier;
         //TODO: add mutexes
@@ -41,12 +42,6 @@ class Job{
         vector<IntermediateVec*> intermediateVec;
 
     public:
-        vector<IntermediateVec*> &getIntermediateVec(){
-            return intermediateVec;
-        }
-
-
-
         Job(const int multiThreadLevel,
             const MapReduceClient& client,
             const InputVec& inputVec, OutputVec& outputVec):
@@ -60,6 +55,8 @@ class Job{
             this->p_afterShuffleBarrier = new Barrier(multiThreadLevel);
             this->p_afterSortBarrier = new Barrier(multiThreadLevel);
         }
+
+
 
         virtual ~Job() {
             while (!this->intermediateVec.empty()){
@@ -77,58 +74,25 @@ class Job{
             }
         }
 
+    //========================= get and set ======================================
         int getMultiThreadLevel() const {
             return multiThreadLevel;
         }
 
-        unsigned long int addAtomicCounter(){
-           return ((*this->p_atomic_counter)++) & (0x7fffffff);
-        }
-
-        void setAtomicCounterInputSize(unsigned long int size){
-            (*this->p_atomic_counter) = ((*this->p_atomic_counter)&(~0x3fffffff80000000))|((unsigned long int)size << 31);
-        }
-
-        void addStageAtomicCounter(){
-            (*this->p_atomic_counter) += ((unsigned long int)1 << 62);
-        }
-
-        void resetAtomicCounterCount(){
-            *this->p_atomic_counter = (*this->p_atomic_counter) & (0xffffffff80000000);
+        vector<IntermediateVec*> &getIntermediateVec(){
+            return intermediateVec;
         }
 
         Barrier *getPAfterShuffleBarrier() const {
             return p_afterShuffleBarrier;
         }
 
-        unsigned long int getAtomicCounterCurrent(){
-            return (this->p_atomic_counter->load()) & (0x7fffffff);
-        }
-
-        unsigned long int getAtomicCounterInputSize(){
-            return ((this->p_atomic_counter->load()) >> 31) & (0x7fffffff);
-        }
-
-        stage_t getAtomicCounterState(){
-            return stage_t((this->p_atomic_counter->load()) >> 62);
-        }
-
-        void setAtomicCounterStage(unsigned long int stage){
-            *this->p_atomic_counter = ((*this->p_atomic_counter) & (0x3fffffffffffffff)) | (stage << 62);
-        }
-
         pthread_mutex_t &getOutputVectorMutex() {
             return outputVectorMutex;
         }
 
-        const std::atomic<uint64_t>* getAtomicCounter(){
-            return this->p_atomic_counter;
-        }
         OutputVec* getOutputVector(){
             return this->outputVec;
-        }
-        std::set<int> *getTest(){
-            return this->test;
         }
 
         IntermediateVec *getPpersonalVectors() const {
@@ -147,36 +111,43 @@ class Job{
             return p_afterSortBarrier;
         }
 
+    //========================= atomic counter ======================================
 
+        unsigned long int addAtomicCounter(){
+           return ((*this->p_atomic_counter)++) & (0x7fffffff);
+        }
+
+        void setAtomicCounterInputSize(unsigned long int size){
+            (*this->p_atomic_counter) = ((*this->p_atomic_counter)&(~0x3fffffff80000000))|((unsigned long int)size << 31);
+        }
+
+        void addStageAtomicCounter(){
+            (*this->p_atomic_counter) += ((unsigned long int)1 << 62);
+        }
+
+        void resetAtomicCounterCount(){
+            *this->p_atomic_counter = (*this->p_atomic_counter) & (0xffffffff80000000);
+        }
+
+        unsigned long int getAtomicCounterCurrent(){
+            return (this->p_atomic_counter->load()) & (0x7fffffff);
+        }
+
+        unsigned long int getAtomicCounterInputSize(){
+            return ((this->p_atomic_counter->load()) >> 31) & (0x7fffffff);
+        }
+
+        stage_t getAtomicCounterState(){
+            return stage_t((this->p_atomic_counter->load()) >> 62);
+        }
+
+        void setAtomicCounterStage(unsigned long int stage){
+            *this->p_atomic_counter = ((*this->p_atomic_counter) & (0x3fffffffffffffff)) | (stage << 62);
+        }
 };
-void emit2 (K2* key, V2* value, void* context){
-    auto p_intermediateVec = (IntermediateVec*) context;
-    p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
-}
 
-bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
-    return *a.first < *b.first;
-}
-bool isEqualKeys(const IntermediatePair &a, const IntermediatePair &b){
-    return !cmpKeys(a,b) &&!cmpKeys(b,a);
-}
 
-void mapAndSort(ThreadContext* tc){
-
-    unsigned long int myIndex = 0;
-    tc->p_job->setAtomicCounterStage(1);
-    myIndex = tc->p_job->addAtomicCounter();     //the thread pick an index to work on:
-    while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
-        // if the index is ok, perform the appropriate function of the client of the pair in the index.
-        // get the matching pair from the index:
-        InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
-        tc->p_job->getClient().map(inputPair.first,inputPair.second,tc->p_personalThreadVector);
-        myIndex = tc->p_job->addAtomicCounter();
-    }
-
-    sort(tc->p_personalThreadVector->begin(), tc->p_personalThreadVector->end(), cmpKeys);
-}
-
+//========================= helpers to delete ======================================
 void printVector2(vector<pair<K2*, V2*>> &vec, int vecId){
     cout<<endl;
     for (auto it = vec.begin(); it != vec.end(); it++){
@@ -199,6 +170,38 @@ void printVector3(vector<pair<K3*, V3*>> &vec, int vecId){
     }
 }
 
+//========================= map and sort phase ======================================
+
+void emit2 (K2* key, V2* value, void* context){
+    auto p_intermediateVec = (IntermediateVec*) context;
+    p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
+}
+
+void mapAndSort(ThreadContext* tc){
+
+    unsigned long int myIndex = 0;
+    tc->p_job->setAtomicCounterStage(1);
+    myIndex = tc->p_job->addAtomicCounter();     //the thread pick an index to work on:
+    while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
+        // if the index is ok, perform the appropriate function of the client of the pair in the index.
+        // get the matching pair from the index:
+        InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
+        tc->p_job->getClient().map(inputPair.first,inputPair.second,tc->p_personalThreadVector);
+        myIndex = tc->p_job->addAtomicCounter();
+    }
+
+    sort(tc->p_personalThreadVector->begin(), tc->p_personalThreadVector->end(), cmpKeys);
+}
+
+
+//========================= shuffle phase ======================================
+bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
+    return *a.first < *b.first;
+}
+
+bool isEqualKeys(const IntermediatePair &a, const IntermediatePair &b){
+    return !cmpKeys(a,b) &&!cmpKeys(b,a);
+}
 
 /**
  * finds the index of the thread who has the largest key
@@ -248,6 +251,7 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
     }
 }
 
+//========================= reduce phase ======================================
 
 void reduce(ThreadContext* tc){
     unsigned long int myIndex = 0;
@@ -273,6 +277,8 @@ void emit3(K3* key,V3* value,void* context){
     pthread_mutex_unlock(&tc->p_job->getOutputVectorMutex());
 }
 
+//========================= main thread logic ======================================
+
 void* threadMainFunction(void* arg)
 {
     ThreadContext* tc = (ThreadContext*) arg;
@@ -290,15 +296,13 @@ void* threadMainFunction(void* arg)
     return nullptr;
 }
 
-
-
-
-
 void error_handler_function(const std::string& inputMessage){
     std::cerr<<"system error: "<<inputMessage<<std::endl;
     //TODO: free all allocate resorces
     exit(EXIT_FAILURE);
 }
+
+//========================= main exercise questions ======================================
 
 // TODO: create a thread context class/ struct that have thread id, and relavent data
 //TODO: create a job class
