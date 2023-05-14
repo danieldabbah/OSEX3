@@ -114,6 +114,10 @@ class Job{
             return stage_t((this->p_atomic_counter->load()) >> 62);
         }
 
+        void setAtomicCounterStage(unsigned long int stage){
+            *this->p_atomic_counter = ((*this->p_atomic_counter) & (0x3fffffffffffffff)) | (stage << 62);
+        }
+
         pthread_mutex_t &getTestMutex() {
             return testMutex;
         }
@@ -144,11 +148,6 @@ class Job{
             return p_afterSortBarrier;
         }
 
-        void advanceAtomicCounterStage(unsigned long int size){
-            this->addStageAtomicCounter();
-            this->setAtomicCounterInputSize(size);
-            this->resetAtomicCounterCount();
-        }
 
 };
 void emit2 (K2* key, V2* value, void* context){
@@ -164,7 +163,9 @@ bool isEqualKeys(const IntermediatePair &a, const IntermediatePair &b){
 }
 
 void mapAndSort(ThreadContext* tc){
+
     unsigned long int myIndex = 0;
+    tc->p_job->setAtomicCounterStage(1);
     myIndex = tc->p_job->addAtomicCounter();     //the thread pick an index to work on:
     while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
         // if the index is ok, perform the appropriate function of the client of the pair in the index.
@@ -226,7 +227,9 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
     for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
         outputSize += tc->p_job->getPpersonalVectors()[i].size();
     }
-    tc->p_job->advanceAtomicCounterStage(outputSize);
+    tc->p_job->addStageAtomicCounter();
+    tc->p_job->resetAtomicCounterCount();
+    tc->p_job->setAtomicCounterInputSize(outputSize);
     unsigned long int count = 0;
     while(count <= outputSize){ // if count > outputsize, break
         int threadIdOfMax = findMaxKeyTid(tc); // find the index of the thread that contains the maximum key.
@@ -246,14 +249,12 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
 
 
 void reduce(ThreadContext* tc){
-
     unsigned long int myIndex = 0;
     //the thread pick an index to work on:
     myIndex = tc->p_job->addAtomicCounter();
-    // TODO: need to change the atmoic counter, input size are to be the size of the output Vector
     //TODO: add call to reduce in the thread main function
     //TODO: add mutex before the insert to the output vector
-    while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
+    while (myIndex < tc->p_job->getAtomicCounterInputSize()){
 
         IntermediateVec* pairs = tc->p_job->getIntermediateVec().at(myIndex);
 
@@ -275,6 +276,8 @@ void* threadMainFunction(void* arg)
     tc->p_job->getPAfterSortBarrier()->barrier();
     if (tc->threadID == 0) {
         shuffle(tc);
+        tc->p_job->resetAtomicCounterCount();
+        tc->p_job->addStageAtomicCounter();
     }
     tc->p_job->getPAfterShuffleBarrier()->barrier();
 
@@ -325,10 +328,13 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
 }
 
 void getJobState(JobHandle job, JobState* state){
-    //TODO: may return the wrong value if a context switch occurs in the middle of the deviation
+    //TODO: may return the wrong values if a context switch occurs in the middle of the deviation
     Job* p_job = static_cast<Job*>(job);
     state->stage = p_job->getAtomicCounterState();
-    state->percentage = (float)p_job->getAtomicCounterCurrent() / (float)p_job->getAtomicCounterInputSize();
+    state->percentage = (100*(float)p_job->getAtomicCounterCurrent()) / (float)p_job->getAtomicCounterInputSize();
+    if (state->percentage > 100.0) {
+        state->percentage = 100.0;
+    }
 }
 
 
