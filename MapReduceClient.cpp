@@ -31,7 +31,6 @@ class Job{
         const MapReduceClient& client;
         const InputVec& inputVec;
         OutputVec* outputVec;
-        JobState state;
         atomic<uint64_t>* p_atomic_counter;        // 0-30 counter, 31-61 input size, 62-63 stage
         std::set<int>* test;
         Barrier* p_afterSortBarrier;
@@ -54,7 +53,6 @@ class Job{
                 testMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
             outputVec = outputVec;
-            this->state = {UNDEFINED_STAGE,0}; //TODO: advance stage and percentage with atomic counter may need a mutex
             //TODO: check if new command fail
             this->threads = new pthread_t[multiThreadLevel];
             this->threadContexts = new ThreadContext[multiThreadLevel];
@@ -151,6 +149,7 @@ class Job{
             this->setAtomicCounterInputSize(size);
             this->resetAtomicCounterCount();
         }
+
 };
 void emit2 (K2* key, V2* value, void* context){
     auto* p_intermediateVec = (IntermediateVec*) context;
@@ -323,6 +322,13 @@ JobHandle startMapReduceJob(const MapReduceClient& client,
         pthread_join(threads[i], NULL);
     }
     return static_cast<JobHandle> (job);
+}
+
+void getJobState(JobHandle job, JobState* state){
+    //TODO: may return the wrong value if a context switch occurs in the middle of the deviation
+    Job* p_job = static_cast<Job*>(job);
+    state->stage = p_job->getAtomicCounterState();
+    state->percentage = (float)p_job->getAtomicCounterCurrent() / (float)p_job->getAtomicCounterInputSize();
 }
 
 
