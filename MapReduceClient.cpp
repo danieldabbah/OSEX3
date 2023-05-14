@@ -52,40 +52,53 @@ class Job{
         Job(const int multiThreadLevel,
             const MapReduceClient& client,
             const InputVec& inputVec, OutputVec& outputVec):
-                testMutex(PTHREAD_MUTEX_INITIALIZER),
+                testMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
-            //TODO: check if new command fail
             outputVec = outputVec;
-            threads = new pthread_t[multiThreadLevel];
-            threadContexts = new ThreadContext[multiThreadLevel];
-            p_personalThreadVectors = new IntermediateVec[multiThreadLevel];
             this->state = {UNDEFINED_STAGE,0};
+            //TODO: check if new command fail
+            this->threads = new pthread_t[multiThreadLevel];
+            this->threadContexts = new ThreadContext[multiThreadLevel];
+            this->p_personalThreadVectors = new IntermediateVec[multiThreadLevel];
             this->p_atomic_counter = new std::atomic<uint64_t>(inputVec.size() << 31);
-            p_afterShuffleBarrier = new Barrier(multiThreadLevel);
-            p_afterSortBarrier = new Barrier(multiThreadLevel);
+            this->p_afterShuffleBarrier = new Barrier(multiThreadLevel);
+            this->p_afterSortBarrier = new Barrier(multiThreadLevel);
+        }
+
+        virtual ~Job() {
+            while (!this->intermediateVec.empty()){
+                free(this->intermediateVec.back());
+                this->intermediateVec.pop_back();
+            }
+            free(this->threads);
+            free(this->threadContexts);
+            free(this->p_personalThreadVectors);
+            free(this->p_atomic_counter);
+            free(this->p_afterShuffleBarrier);
+            free(this->p_afterSortBarrier);
+            if(pthread_mutex_destroy(&this->testMutex) != 0){
+                //TODO: handle error
+            }
         }
 
         int getMultiThreadLevel() const {
             return multiThreadLevel;
         }
 
-        virtual ~Job() {
-            free(this->threads);
-            free(this->threadContexts);
-            free(this->p_personalThreadVectors);
-            free(this->p_atomic_counter);
-        }
-
         unsigned long int addAtomicCounter(){
            return ((*this->p_atomic_counter)++) & (0x7fffffff);
         }
 
-        void setAtomicCounterInputSize(int size){
+        void setAtomicCounterInputSize(unsigned long int size){
             (*this->p_atomic_counter) = ((*this->p_atomic_counter)&(~0x3fffffff80000000))|((unsigned long int)size << 31);
         }
 
         void addStageAtomicCounter(){
             (*this->p_atomic_counter) += ((unsigned long int)1 << 62);
+        }
+
+        void resetAtomicCounterCount(){
+            *this->p_atomic_counter = (*this->p_atomic_counter) && (0xffffffff80000000);
         }
 
         Barrier *getPAfterShuffleBarrier() const {
@@ -133,6 +146,12 @@ class Job{
         Barrier *getPAfterSortBarrier() const {
             return p_afterSortBarrier;
         }
+
+        void advanceAtomicCounterStage(unsigned long int size){
+            this->addStageAtomicCounter();
+            this->setAtomicCounterInputSize(size);
+            this->resetAtomicCounterCount();
+        }
 };
 void emit2 (K2* key, V2* value, void* context){
     auto* p_intermediateVec = (IntermediateVec*) context;
@@ -148,22 +167,30 @@ bool isEqualKeys(const IntermediatePair &a, const IntermediatePair &b){
 
 void mapAndSort(ThreadContext* tc){
     unsigned long int myIndex = 0;
-    //the thread pick an index to work on:
-    myIndex = tc->p_job->addAtomicCounter();
+    myIndex = tc->p_job->addAtomicCounter();     //the thread pick an index to work on:
     while (myIndex  < tc->p_job->getAtomicCounterInputSize()){
         // if the index is ok, perform the appropriate function of the client of the pair in the index.
         // get the matching pair from the index:
         InputPair inputPair = tc->p_job->getInputVec().at(myIndex);
-
         tc->p_job->getClient().map(inputPair.first,inputPair.second,tc->p_pesonalThreadVector);
         myIndex = tc->p_job->addAtomicCounter();
     }
 
-    // each thread will sort its intermidateVector:
-    //sort(tc->p_pesonalThreadVector->begin(), tc->p_pesonalThreadVector->end(), cmpKeys);
+    sort(tc->p_pesonalThreadVector->begin(), tc->p_pesonalThreadVector->end(), cmpKeys);
 }
 
 void printVector2(vector<pair<K2*, V2*>> &vec, int vecId){
+    cout<<endl;
+    for (auto it = vec.begin(); it != vec.end(); it++){
+        cout << "thread: " << vecId << " key:" ;
+        it->first->print();
+        cout << " value: ";
+        it->second->print();
+        cout << endl;
+    }
+}
+
+void printVector3(vector<pair<K3*, V3*>> &vec, int vecId){
     cout<<endl;
     for (auto it = vec.begin(); it != vec.end(); it++){
         cout << "thread: " << vecId << " key:" ;
@@ -201,24 +228,21 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
     for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
         outputSize += tc->p_job->getPpersonalVectors()[i].size();
     }
+    tc->p_job->advanceAtomicCounterStage(outputSize);
     unsigned long int count = 0;
     while(count <= outputSize){ // if count > outputsize, break
         int threadIdOfMax = findMaxKeyTid(tc); // find the index of the thread that contains the maximum key.
         IntermediateVec* p_currentVec = new IntermediateVec();
         IntermediatePair  currentPair = tc->p_job->getPpersonalVectors()[threadIdOfMax].back();
         // create intermidate vector
-
         for (int i = 0; i < tc->p_job->getMultiThreadLevel(); ++i) { // for every thread personal vector
             while(isEqualKeys(tc->p_job->getPpersonalVectors()[i].back(), currentPair)){ //get all equal key pairs
                 p_currentVec->push_back(tc->p_job->getPpersonalVectors()[i].back());
                 tc->p_job->getPpersonalVectors()[i].pop_back();
                 count++;
             }
-
         }
         tc->p_job->getIntermediateVec().push_back(p_currentVec);
-        // for loop to iterate over all the threads vctor
-        // while loop to get all the keys each vector
     }
 }
 
