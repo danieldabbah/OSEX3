@@ -40,12 +40,13 @@ class Job{
         //TODO: add mutexes
         //TODO: in the destructor release the new
         pthread_mutex_t testMutex;
-        vector<IntermediateVec> intermediateVec;
+        vector<IntermediateVec*> intermediateVec;
 
     public:
-        vector<IntermediateVec> &getIntermediateVec(){
+        vector<IntermediateVec*> &getIntermediateVec(){
             return intermediateVec;
         }
+
 
 
         Job(const int multiThreadLevel,
@@ -141,6 +142,9 @@ void emit2 (K2* key, V2* value, void* context){
 bool cmpKeys(const IntermediatePair &a, const IntermediatePair &b){
     return *a.first < *b.first;
 }
+bool isEqualKeys(const IntermediatePair &a, const IntermediatePair &b){
+    return !cmpKeys(a,b) &&!cmpKeys(b,a);
+}
 
 void mapAndSort(ThreadContext* tc){
     unsigned long int myIndex = 0;
@@ -182,7 +186,7 @@ int findMaxKeyTid(ThreadContext* tc){
     int saveId = -1;
     vector<pair<K2*, V2*>>* curVector;
     for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
-        curVector = &tc->p_job->getIntermediateVec().at(i);
+        curVector = tc->p_job->getIntermediateVec().at(i);
         if (!curVector->empty()){
             if (maxKey == nullptr || *maxKey < *curVector->back().first) {
                 maxKey = curVector->back().first;
@@ -196,12 +200,26 @@ int findMaxKeyTid(ThreadContext* tc){
 void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each phase counter and the phase itself. set the counter to 0 after each phase.
     unsigned long int outputSize = 0;
     for (int i = 0; i < tc->p_job->getMultiThreadLevel(); i++){
-        outputSize += tc->p_job->getPpersonalVectors()->size();
+        outputSize += tc->p_job->getPpersonalVectors()[i].size();
     }
     unsigned long int count = 0;
-    while (count <= outputSize){
-        int max = 0;
+    while(count <= outputSize){ // if count > outputsize, break
+        int threadIdOfMax = findMaxKeyTid(tc); // find the index of the thread that contains the maximum key.
+        IntermediateVec* p_currentVec = new IntermediateVec();
+        IntermediatePair  currentPair = tc->p_job->getPpersonalVectors()[threadIdOfMax].back();
+        // create intermidate vector
 
+        for (int i = 0; i < tc->p_job->getMultiThreadLevel(); ++i) { // for every thread personal vector
+            while(isEqualKeys(tc->p_job->getPpersonalVectors()[i].back(), currentPair)){ //get all equal key pairs
+                p_currentVec->push_back(tc->p_job->getPpersonalVectors()[i].back());
+                tc->p_job->getPpersonalVectors()[i].pop_back();
+                count++;
+            }
+
+        }
+        tc->p_job->getIntermediateVec().push_back(p_currentVec);
+        // for loop to iterate over all the threads vctor
+        // while loop to get all the keys each vector
     }
 }
 
