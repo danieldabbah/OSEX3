@@ -37,7 +37,7 @@ class Job{
         Barrier* p_afterShuffleBarrier;
         //TODO: add mutexes
         //TODO: in the destructor release the new
-        pthread_mutex_t testMutex;
+        pthread_mutex_t outputVectorMutex;
         vector<IntermediateVec*> intermediateVec;
 
     public:
@@ -50,7 +50,7 @@ class Job{
         Job(const int multiThreadLevel,
             const MapReduceClient& client,
             const InputVec& inputVec, OutputVec& outputVec):
-                testMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
+                outputVectorMutex(PTHREAD_MUTEX_INITIALIZER), intermediateVec(),
                 multiThreadLevel(multiThreadLevel), client(client), inputVec(inputVec){
             outputVec = outputVec;
             //TODO: check if new command fail
@@ -73,7 +73,7 @@ class Job{
             free(this->p_atomic_counter);
             free(this->p_afterShuffleBarrier);
             free(this->p_afterSortBarrier);
-            if(pthread_mutex_destroy(&this->testMutex) != 0){
+            if(pthread_mutex_destroy(&this->outputVectorMutex) != 0){
                 //TODO: handle error
             }
         }
@@ -119,7 +119,7 @@ class Job{
         }
 
         pthread_mutex_t &getTestMutex() {
-            return testMutex;
+            return outputVectorMutex;
         }
 
         const std::atomic<uint64_t>* getAtomicCounter(){
@@ -151,7 +151,7 @@ class Job{
 
 };
 void emit2 (K2* key, V2* value, void* context){
-    auto* p_intermediateVec = (IntermediateVec*) context;
+    auto p_intermediateVec = (IntermediateVec*) context;
     p_intermediateVec->push_back(pair<K2*, V2*>(key, value));
 }
 
@@ -237,9 +237,11 @@ void shuffle(ThreadContext* tc){ //TODO: advance the atomic counter after each p
         IntermediatePair  currentPair = tc->p_job->getPpersonalVectors()[threadIdOfMax].back();
         // create intermidate vector
         for (int i = 0; i < tc->p_job->getMultiThreadLevel(); ++i) { // for every thread personal vector
-            while(isEqualKeys(tc->p_job->getPpersonalVectors()[i].back(), currentPair)){ //get all equal key pairs
+            //TODO: personal vector can be empty
+            while( !(tc->p_job->getPpersonalVectors()[i].empty())&&  isEqualKeys(tc->p_job->getPpersonalVectors()[i].back(), currentPair)){ //get all equal key pairs
                 p_currentVec->push_back(tc->p_job->getPpersonalVectors()[i].back());
                 tc->p_job->getPpersonalVectors()[i].pop_back();
+                //TODO: need to update count only in the end or at each element
                 count++;
             }
         }
@@ -254,6 +256,7 @@ void reduce(ThreadContext* tc){
     myIndex = tc->p_job->addAtomicCounter();
     //TODO: add call to reduce in the thread main function
     //TODO: add mutex before the insert to the output vector
+    //TODO: change the size of the inputVector
     while (myIndex < tc->p_job->getAtomicCounterInputSize()){
 
         IntermediateVec* pairs = tc->p_job->getIntermediateVec().at(myIndex);
@@ -264,7 +267,7 @@ void reduce(ThreadContext* tc){
 }
 
 void emit3(K3* key,V3* value,void* context){
-    auto* p_outputVec = (OutputVec*) context;
+    auto p_outputVec = (OutputVec*) context;
     p_outputVec->push_back(pair<K3*, V3*>(key, value));
 }
 
